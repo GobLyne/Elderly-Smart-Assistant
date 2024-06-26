@@ -5,6 +5,7 @@ import threading
 import pygame
 import time
 import speech_recognition as sr
+import mediapipe as mp
 from ultralytics import YOLO
 
 # Initialize pygame mixer for sound
@@ -57,6 +58,10 @@ def detect_fall():
 
     fall_start_time = None
 
+    # Initialize MediaPipe pose detection
+    mp_pose = mp.solutions.pose
+    pose = mp_pose.Pose()
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -82,24 +87,33 @@ def detect_fall():
 
                 # Perform fall detection only for persons (assuming class ID 0 is for persons)
                 if class_name.lower() == "person":
-                    height = y2 - y1
-                    width = x2 - x1
-                    threshold = height - width
 
-                    if threshold < 0 and conf > 80:
-                        if fall_start_time is None:
-                            fall_start_time = time.time()
-                            print("Fall start time recorded")
+                    # Extract ROI for pose estimation
+                    person_roi = frame[y1:y2, x1:x2]
+                    person_roi_rgb = cv2.cvtColor(person_roi, cv2.COLOR_BGR2RGB)
+                    result_pose = pose.process(person_roi_rgb)
+
+                    if result_pose.pose_landmarks:
+                        # Extract key points
+                        landmarks = result_pose.pose_landmarks.landmark
+                        shoulder_y = (landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y + landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y) / 2
+                        hip_y = (landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y + landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y) / 2
+
+                        # Simple heuristic for fall detection: If the shoulders are significantly lower than the hips
+                        if shoulder_y > hip_y and conf > 80:
+                            if fall_start_time is None:
+                                fall_start_time = time.time()
+                                print("Fall start time recorded")
+                            else:
+                                fall_duration = time.time() - fall_start_time
+                                print(f"Fall duration: {fall_duration} seconds")
+                                if fall_duration > 0:
+                                    fall_detected = True
+                                    cvzone.putTextRect(frame, 'Fall Detected', [x1, y1 - 40], thickness=2, scale=2)
+                                    print("Fall detected! Sounding the alarm...")
+                                    sound_alarm()
                         else:
-                            fall_duration = time.time() - fall_start_time
-                            print(f"Fall duration: {fall_duration} seconds")
-                            if fall_duration > 3:
-                                fall_detected = True
-                                cvzone.putTextRect(frame, 'Fall Detected', [x1, y1 - 40], thickness=2, scale=2)
-                                print("Fall detected! Sounding the alarm...")
-                                sound_alarm()
-                    else:
-                        fall_start_time = None
+                            fall_start_time = None
 
         if fall_detected:
             fall_start_time = None

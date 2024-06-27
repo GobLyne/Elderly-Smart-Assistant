@@ -4,25 +4,36 @@ import math
 import threading
 import pygame
 import time
+# import os
 import speech_recognition as sr
 import mediapipe as mp
 from ultralytics import YOLO
+from gtts import gTTS
 
 # Initialize pygame mixer for sound
-pygame.mixer.init()
-pygame.mixer.music.load('media\\alarm sound.mp3')
+pygame.init()
+
+mixerAlarm = pygame.mixer
+mixerVoice = pygame.mixer
+
+mixerAlarm.init()
+mixerVoice.init()
+
+object_locations = {}
+detected_objects = {}
 
 # Function to play the alarm sound
 def sound_alarm():
-    pygame.mixer.music.play(loops=5)
-    while pygame.mixer.music.get_busy():
+    mixerAlarm.music.load('media\\alarm sound.mp3')
+    mixerAlarm.music.play(loops=5)
+    while mixerAlarm.music.get_busy():
         continue
 
 def recognize_speech_and_detect_phrase():
     recognizer = sr.Recognizer()
     microphone = sr.Microphone()
 
-    print("Listening for the phrase 'Please, help me!'...")
+    print("Listening to you...")
 
     while True:
         with microphone as source:
@@ -38,11 +49,83 @@ def recognize_speech_and_detect_phrase():
                 if "help" in recognized_audio.lower():
                     print("Phrase detected! Sounding the alarm...")
                     sound_alarm()
+                elif "where" in recognized_audio.lower():
+                    words = recognized_audio.split()
+                    user_input = words[-1]  # take the last word of the sentence
+                    print(f"Phrase detected! Searching for the {user_input}...")
+
+                    # Check if the item is detected
+                    if user_input in detected_objects:
+                        # Determine location of the detected object
+                        object_locations[user_input] = determine_location(user_input, detected_objects)
+                        print(f"The {user_input} is located at the {object_locations[user_input]}")
+
+                        # Convert output to speech using text-to-speech
+                        speak(f"The {user_input} is located at the {object_locations[user_input]}")
+                    else:
+                        print(f"The {user_input} is not detected")
+                        speak(f"The {user_input} is not detected")
 
             except sr.UnknownValueError:
                 print("Could not understand the audio")
             except sr.RequestError as e:
                 print(f"Could not request results from the speech recognition service; {e}")
+
+def speak(text):
+    tts = gTTS(text=text, lang='en')
+    filename = "media\\voice.mp3"
+
+    tts.save(filename)
+    mixerVoice.music.load(filename)
+
+    mixerVoice.music.play()
+    while mixerVoice.music.get_busy():
+        continue
+
+    mixerVoice.music.stop()  # Stop the music explicitly
+    mixerVoice.music.unload()
+    # print(mixerVoice.music.get_busy())
+    # os.remove(filename)
+
+def determine_location(detected_object, detected_objects):
+    # Get the bounding box of the detected object
+    x1, y1 = detected_objects[detected_object][0]
+    x2, y2 = detected_objects[detected_object][1]
+
+    # Initialize the location of the detected object
+    object_location = "center"
+
+    # Check if the detected object is near other objects
+    for obj, bbox in detected_objects.items():
+        if obj != detected_object:
+            # Get the bounding box of the other object
+            bx1, by1 = bbox[0]
+            bx2, by2 = bbox[1]
+
+            # Check if the detected object is above, below, left, or right of the other object
+            if y1 < by1 and y2 < by2:  # above
+                object_location = f"above {obj}"
+                break
+            elif y1 > by1 and y2 > by2:  # below
+                object_location = f"below {obj}"
+                break
+            elif x1 < bx1 and x2 < bx2:  # left
+                object_location = f"right of {obj}"
+                break
+            elif x1 > bx1 and x2 > bx2:  # right
+                object_location = f"left of {obj}"
+                break
+            else:
+                # Calculate the distance between the centers of the bounding boxes
+                dx = (x1 + x2) / 2 - (bx1 + bx2) / 2
+                dy = (y1 + y2) / 2 - (by1 + by2) / 2
+                distance = math.sqrt(dx ** 2 + dy ** 2)
+
+                if distance < 100:  # adjust this value based on your camera resolution and object sizes
+                    object_location = f"near {obj}"
+                    break
+
+    return object_location
 
 def detect_fall():
     # Initialize video capture
@@ -72,6 +155,7 @@ def detect_fall():
         results = model(frame)
 
         fall_detected = False
+        detected_objects.clear()
 
         for result in results:
             for box in result.boxes:
@@ -84,6 +168,9 @@ def detect_fall():
                 # Draw bounding box and label for all detected objects
                 cvzone.cornerRect(frame, [x1, y1, x2 - x1, y2 - y1], l=30, rt=6)
                 cvzone.putTextRect(frame, f'{class_name} {conf}%', [x1 + 8, y1 - 12], thickness=2, scale=2)
+
+                # Store detected object and its bounding box
+                detected_objects[class_name] = [(x1, y1), (x2, y2)]
 
                 # Perform fall detection only for persons (assuming class ID 0 is for persons)
                 if class_name.lower() == "person":

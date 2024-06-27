@@ -4,3 +4,4 @@ pygame
 SpeechRecognition
 mediapipe
 gtts
+pyaudio

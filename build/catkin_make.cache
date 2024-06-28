@@ -1,0 +1,2 @@
+elderly_assistant:elderly_support_system
+-DCATKIN_DEVEL_PREFIX=/home/mustar/final/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/mustar/final/catkin_ws/install -G Unix Makefiles

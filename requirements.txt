@@ -3,3 +3,6 @@ cvzone
 pygame
 SpeechRecognition
 mediapipe
+gtts
+pyaudio
+rospkg

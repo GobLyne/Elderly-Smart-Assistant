@@ -2,3 +2,6 @@ ultralytics
 cvzone
 pygame
 SpeechRecognition
+mediapipe
+gtts
+pyaudio
